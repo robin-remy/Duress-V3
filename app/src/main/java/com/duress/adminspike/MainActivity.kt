@@ -3,7 +3,7 @@ package com.duress.adminspike
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -14,10 +14,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
-/**
- * Spike 1: activa un device admin y prueba wipeData().
- * La UI se construye en código para no depender de recursos de layout.
- */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var dpm: DevicePolicyManager
@@ -42,22 +38,22 @@ class MainActivity : AppCompatActivity() {
 
         status = TextView(this).apply {
             textSize = 18f
-            text = "Device admin: -"
+            text = "Estado: -"
         }
 
-        val btnEnable = Button(this).apply {
-            text = "1) Activar device admin"
-            setOnClickListener { requestAdmin() }
+        val btnStatus = Button(this).apply {
+            text = "Actualizar estado"
+            setOnClickListener { refresh() }
         }
 
         val btnWipe = Button(this).apply {
-            text = "2) Probar wipeData()  [BORRA]"
+            text = "Probar wipeData()  [BORRA]"
             setOnClickListener { confirmWipe() }
         }
 
         root.addView(status)
         root.addView(space())
-        root.addView(btnEnable)
+        root.addView(btnStatus)
         root.addView(space())
         root.addView(btnWipe)
 
@@ -66,46 +62,39 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        status.text = if (dpm.isAdminActive(admin)) {
-            "Device admin: ACTIVO"
-        } else {
-            "Device admin: inactivo"
-        }
+        refresh()
     }
 
-    private fun requestAdmin() {
-        if (dpm.isAdminActive(admin)) {
-            toast("Ya está activo")
-            return
+    private fun refresh() {
+        status.text = when {
+            dpm.isDeviceOwnerApp(packageName) -> "Estado: DEVICE OWNER (OK)"
+            dpm.isAdminActive(admin) -> "Estado: device admin (SIN Device Owner)"
+            else -> "Estado: sin privilegios"
         }
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
-            putExtra(
-                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Prueba de factibilidad DURESS: permite el borrado del dispositivo."
-            )
-        }
-        startActivity(intent)
     }
 
     private fun confirmWipe() {
-        if (!dpm.isAdminActive(admin)) {
-            toast("Activa el device admin primero")
-            return
+        val warn = if (dpm.isDeviceOwnerApp(packageName)) {
+            "Es Device Owner. wipeData() deberia hacer factory reset REAL."
+        } else {
+            "NO es Device Owner: probablemente falle igual que antes."
         }
-        // Confirmación presente SOLO en el spike, para evitar borrados accidentales.
-        // El producto final no la tendrá (borrado discreto).
         AlertDialog.Builder(this)
             .setTitle("PRUEBA DESTRUCTIVA")
-            .setMessage("Esto llamará a wipeData() y BORRARÁ el dispositivo de fábrica. ¿Continuar?")
+            .setMessage("$warn\n\nContinuar y BORRAR el dispositivo?")
             .setNegativeButton("Cancelar", null)
             .setPositiveButton("BORRAR AHORA") { _, _ -> doWipe() }
             .show()
     }
 
     private fun doWipe() {
+        var flags = DevicePolicyManager.WIPE_EXTERNAL_STORAGE
+        if (Build.VERSION.SDK_INT >= 34) {
+            // Borrado silencioso (solo Device Owner, Android 14+)
+            flags = flags or DevicePolicyManager.WIPE_SILENTLY
+        }
         try {
-            dpm.wipeData(0)
+            dpm.wipeData(flags)
         } catch (e: SecurityException) {
             toast("SecurityException: ${e.message}")
         } catch (e: Exception) {
