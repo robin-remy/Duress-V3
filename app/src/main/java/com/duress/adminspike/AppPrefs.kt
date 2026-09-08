@@ -14,4 +14,8 @@ class AppPrefs(context: Context) {
     var kiosk: Boolean
         get() = sp.getBoolean("kiosk", false)
         set(v) { sp.edit().putBoolean("kiosk", v).apply() }
+
+    var showOnBoot: Boolean
+        get() = sp.getBoolean("show_on_boot", false)
+        set(v) { sp.edit().putBoolean("show_on_boot", v).apply() }
 }
