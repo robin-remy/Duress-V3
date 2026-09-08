@@ -11,8 +11,8 @@ android {
         applicationId = "com.duress.adminspike"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.2-do-spike"
+        versionCode = 3
+        versionName = "0.3-phase2"
     }
 
     signingConfigs {
@@ -25,9 +25,7 @@ android {
     }
 
     buildTypes {
-        getByName("debug") {
-            signingConfig = signingConfigs.getByName("stable")
-        }
+        getByName("debug") { signingConfig = signingConfigs.getByName("stable") }
         getByName("release") {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("stable")
@@ -39,12 +37,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 }
