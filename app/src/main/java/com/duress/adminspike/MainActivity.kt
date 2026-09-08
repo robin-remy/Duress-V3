@@ -5,104 +5,123 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var store: SecurePinStore
     private lateinit var dpm: DevicePolicyManager
-    private lateinit var admin: ComponentName
-    private lateinit var status: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        store = SecurePinStore(this)
         dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        admin = ComponentName(this, DuressAdminReceiver::class.java)
+        if (store.isConfigured()) showGate() else showSetup()
+    }
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(48, 48, 48, 48)
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
+    private fun column() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setPadding(48, 48, 48, 48)
+        layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        )
+    }
+
+    private fun pinField(hint: String) = EditText(this).apply {
+        this.hint = hint
+        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+    }
+
+    private fun title(t: String) = TextView(this).apply {
+        text = t; textSize = 20f; gravity = Gravity.CENTER
+    }
+
+    private fun space(): View = TextView(this).apply { text = "\n" }
+    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
+    private fun validPin(p: String) = p.length in 4..8 && p.all { it.isDigit() }
+
+    private fun showSetup() {
+        val root = column()
+        val mode = TextView(this).apply {
+            text = if (dpm.isDeviceOwnerApp(packageName))
+                "Modo: DEVICE OWNER (el borrado real funcionara)"
+            else
+                "Modo: sin privilegios (probaras solo la logica; no se borrara)"
+            textSize = 12f; gravity = Gravity.CENTER
         }
-
-        status = TextView(this).apply {
-            textSize = 18f
-            text = "Estado: -"
+        val normal = pinField("PIN normal")
+        val duress = pinField("PIN de emergencia (Duress)")
+        val save = Button(this).apply { text = "Guardar" }
+        save.setOnClickListener {
+            val n = normal.text.toString(); val d = duress.text.toString()
+            when {
+                !validPin(n) || !validPin(d) -> toast("Cada PIN debe tener entre 4 y 8 digitos")
+                n == d -> toast("Los dos PIN deben ser diferentes")
+                else -> { store.configure(n, d); toast("PIN configurados"); showGate() }
+            }
         }
-
-        val btnStatus = Button(this).apply {
-            text = "Actualizar estado"
-            setOnClickListener { refresh() }
-        }
-
-        val btnWipe = Button(this).apply {
-            text = "Probar wipeData()  [BORRA]"
-            setOnClickListener { confirmWipe() }
-        }
-
-        root.addView(status)
-        root.addView(space())
-        root.addView(btnStatus)
-        root.addView(space())
-        root.addView(btnWipe)
-
+        root.addView(title("Configura tus dos PIN\n(4 a 8 digitos, distintos)"))
+        root.addView(mode); root.addView(space())
+        root.addView(normal); root.addView(duress); root.addView(space())
+        root.addView(save)
         setContentView(root)
     }
 
-    override fun onResume() {
-        super.onResume()
-        refresh()
-    }
-
-    private fun refresh() {
-        status.text = when {
-            dpm.isDeviceOwnerApp(packageName) -> "Estado: DEVICE OWNER (OK)"
-            dpm.isAdminActive(admin) -> "Estado: device admin (SIN Device Owner)"
-            else -> "Estado: sin privilegios"
+    private fun showGate() {
+        val root = column()
+        val field = pinField("PIN")
+        val error = TextView(this).apply { setTextColor(0xFFCC0000.toInt()) }
+        val ok = Button(this).apply { text = "Entrar" }
+        ok.setOnClickListener {
+            val pin = field.text.toString()
+            field.text.clear()
+            when (store.verify(pin)) {
+                SecurePinStore.Result.NORMAL -> showAccess()
+                SecurePinStore.Result.DURESS -> triggerDuress()
+                SecurePinStore.Result.WRONG -> error.text = "PIN incorrecto"
+            }
         }
+        root.addView(title("Introduce tu PIN")); root.addView(space())
+        root.addView(field); root.addView(error); root.addView(space())
+        root.addView(ok)
+        setContentView(root)
     }
 
-    private fun confirmWipe() {
-        val warn = if (dpm.isDeviceOwnerApp(packageName)) {
-            "Es Device Owner. wipeData() deberia hacer factory reset REAL."
-        } else {
-            "NO es Device Owner: probablemente falle igual que antes."
-        }
-        AlertDialog.Builder(this)
-            .setTitle("PRUEBA DESTRUCTIVA")
-            .setMessage("$warn\n\nContinuar y BORRAR el dispositivo?")
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton("BORRAR AHORA") { _, _ -> doWipe() }
-            .show()
+    private fun showAccess() {
+        val root = column()
+        root.addView(title("\u2713 Acceso concedido")); root.addView(space())
+        root.addView(Button(this).apply {
+            text = "Bloquear"; setOnClickListener { showGate() }
+        })
+        root.addView(space())
+        root.addView(Button(this).apply {
+            text = "Reconfigurar PIN"
+            setOnClickListener { store.reset(); showSetup() }
+        })
+        setContentView(root)
     }
 
-    private fun doWipe() {
+    private fun triggerDuress() {
+        // Elegido: borrar de inmediato, en silencio.
         var flags = DevicePolicyManager.WIPE_EXTERNAL_STORAGE
-        if (Build.VERSION.SDK_INT >= 34) {
-            // Borrado silencioso (solo Device Owner, Android 14+)
-            flags = flags or DevicePolicyManager.WIPE_SILENTLY
-        }
+        if (Build.VERSION.SDK_INT >= 34) flags = flags or DevicePolicyManager.WIPE_SILENTLY
         try {
             dpm.wipeData(flags)
         } catch (e: SecurityException) {
-            toast("SecurityException: ${e.message}")
+            // Sin Device Owner no borra: sirve para validar la LOGICA sin destruir.
+            toast("[Deteccion Duress OK] wipeData bloqueado: ${e.message}")
         } catch (e: Exception) {
-            toast("Error: ${e.message}")
+            toast("[Deteccion Duress OK] error: ${e.message}")
         }
     }
-
-    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
-
-    private fun space(): TextView = TextView(this).apply { text = "\n" }
 }
