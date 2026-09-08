@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
     <application
         android:allowBackup="false"
         android:icon="@android:drawable/ic_lock_lock"
@@ -9,6 +13,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -16,7 +21,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Provisioning: elegir modo (dispositivo totalmente gestionado) -->
         <activity
             android:name=".GetProvisioningModeActivity"
             android:exported="true">
@@ -26,7 +30,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Provisioning: paso final de cumplimiento -->
         <activity
             android:name=".PolicyComplianceActivity"
             android:exported="true">
@@ -45,6 +48,16 @@
                 android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
 
