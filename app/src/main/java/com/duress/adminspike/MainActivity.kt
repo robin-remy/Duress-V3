@@ -1,15 +1,22 @@
 package com.duress.adminspike
 
+import android.Manifest
+import android.app.NotificationManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
@@ -17,6 +24,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
 
@@ -44,6 +53,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyLockScreenFlags()
         store = SecurePinStore(this)
         prefs = AppPrefs(this)
         guard = AttemptGuard(this)
@@ -51,12 +61,24 @@ class MainActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Nunca se sale del gate/setup con "atras". En acceso, "atras" re-bloquea.
                 if (screen == Screen.ACCESS) showGate()
             }
         })
 
         if (store.isConfigured()) showGate() else showSetupNormal()
+    }
+
+    private fun applyLockScreenFlags() {
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
     }
 
     override fun onStop() {
@@ -70,7 +92,6 @@ class MainActivity : AppCompatActivity() {
         else if (screen == Screen.GATE) maybeStartKiosk()
     }
 
-    // ---------- kiosco (solo Device Owner) ----------
     private fun isDO() = dpm.isDeviceOwnerApp(packageName)
 
     private fun maybeStartKiosk() {
@@ -81,7 +102,6 @@ class MainActivity : AppCompatActivity() {
     }
     private fun stopKiosk() { try { stopLockTask() } catch (_: Exception) {} }
 
-    // ---------- helpers UI ----------
     private fun column() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER
@@ -97,10 +117,7 @@ class MainActivity : AppCompatActivity() {
     private fun validPin(p: String) = p.length in 4..8 && p.all { it.isDigit() }
 
     private fun renderDots() { currentDots?.text = "\u25CF ".repeat(entry.length).trim() }
-
-    private fun clearEntryAndReshuffle() {
-        entry.setLength(0); renderDots(); currentKeypad?.reshuffle()
-    }
+    private fun clearEntryAndReshuffle() { entry.setLength(0); renderDots(); currentKeypad?.reshuffle() }
 
     private fun startLockoutTicker() {
         stopTicker()
@@ -143,7 +160,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
     }
 
-    // ---------- setup ----------
     private fun showSetupNormal() {
         screen = Screen.SETUP
         pendingNormal = null
@@ -176,24 +192,18 @@ class MainActivity : AppCompatActivity() {
             })
     }
 
-    // ---------- gate ----------
     private fun showGate() {
         screen = Screen.GATE
         buildPinScreen("Introduce tu PIN", null, prefs.shuffle,
             onConfirm = { pin ->
                 val result = store.verify(pin)
                 when {
-                    result == SecurePinStore.Result.DURESS -> triggerDuress()  // siempre, ignora bloqueo
-                    guard.isLockedOut() -> {
-                        clearEntryAndReshuffle(); startLockoutTicker()
-                    }
-                    result == SecurePinStore.Result.NORMAL -> {
-                        guard.recordSuccess(); stopTicker(); showAccess()
-                    }
+                    result == SecurePinStore.Result.DURESS -> triggerDuress()
+                    guard.isLockedOut() -> { clearEntryAndReshuffle(); startLockoutTicker() }
+                    result == SecurePinStore.Result.NORMAL -> { guard.recordSuccess(); stopTicker(); showAccess() }
                     else -> {
                         guard.recordFailure(); clearEntryAndReshuffle()
-                        if (guard.isLockedOut()) startLockoutTicker()
-                        else currentError?.text = "PIN incorrecto"
+                        if (guard.isLockedOut()) startLockoutTicker() else currentError?.text = "PIN incorrecto"
                     }
                 }
             })
@@ -219,6 +229,12 @@ class MainActivity : AppCompatActivity() {
                 if (c && !isDO()) toast("Requiere Device Owner para bloquear del todo")
             }
         }
+        val bootBox = CheckBox(this).apply {
+            text = "Aparecer al encender / sobre el bloqueo"
+            isChecked = prefs.showOnBoot
+            setOnCheckedChangeListener { _, c -> if (c) enableShowOnBoot() else prefs.showOnBoot = false }
+        }
+
         val uninstallBtn = Button(this)
         fun refreshUninstall() {
             val blocked = if (isDO()) try { dpm.isUninstallBlocked(admin, packageName) } catch (_: Exception) { false } else false
@@ -233,7 +249,7 @@ class MainActivity : AppCompatActivity() {
         refreshUninstall()
 
         root.addView(title("\u2713 Acceso concedido")); root.addView(space())
-        root.addView(shuffleBox); root.addView(kioskBox); root.addView(space())
+        root.addView(shuffleBox); root.addView(kioskBox); root.addView(bootBox); root.addView(space())
         root.addView(uninstallBtn); root.addView(space())
         root.addView(Button(this).apply { text = "Bloquear"; setOnClickListener { showGate() } }); root.addView(space())
         root.addView(Button(this).apply {
@@ -241,6 +257,25 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { store.reset(); showSetupNormal() }
         })
         setContentView(root)
+    }
+
+    private fun enableShowOnBoot() {
+        prefs.showOnBoot = true
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+        }
+        if (Build.VERSION.SDK_INT >= 34) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (!nm.canUseFullScreenIntent()) {
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                        Uri.parse("package:$packageName")))
+                } catch (_: Exception) {}
+            }
+        }
+        toast("Activado. En MIUI/XOS: habilita ademas 'Inicio automatico' y permisos de pantalla de bloqueo en Ajustes de la app.")
     }
 
     private fun triggerDuress() {
