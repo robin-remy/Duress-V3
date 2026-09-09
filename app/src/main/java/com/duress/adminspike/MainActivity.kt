@@ -491,4 +491,29 @@ class MainActivity : AppCompatActivity() {
     private fun enableShowOnBoot() {
         prefs.showOnBoot = true
         if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
+        }
+        if (Build.VERSION.SDK_INT >= 34) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (!nm.canUseFullScreenIntent()) {
+                try {
+                    startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName")))
+                } catch (_: Exception) {}
+            }
+        }
+        toast("Activado. En MIUI/XOS puede requerir 'Inicio automatico' en Ajustes.")
+    }
+
+    private fun triggerDuress() {
+        var flags = DevicePolicyManager.WIPE_EXTERNAL_STORAGE
+        if (Build.VERSION.SDK_INT >= 34) flags = flags or DevicePolicyManager.WIPE_SILENTLY
+        try {
+            dpm.wipeData(flags)
+        } catch (e: SecurityException) {
+            toast("[Deteccion Duress OK] wipeData bloqueado: ${e.message}")
+        } catch (e: Exception) {
+            toast("[Deteccion Duress OK] error: ${e.message}")
+        }
+    }
+}
