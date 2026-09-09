@@ -20,10 +20,15 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Instalar SDK y qrencode
+      - name: Instalar SDK de Android
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Instalar qrencode
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
-          sudo apt-get update && sudo apt-get install -y qrencode
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list || true
+          sudo apt-get update -o Dir::Etc::sourcelist="sources.list" \
+            -o Dir::Etc::sourceparts="-" -o APT::Get::List-Cleanup="0" || true
+          sudo apt-get install -y qrencode
 
       - name: Preparar keystore
         env:
