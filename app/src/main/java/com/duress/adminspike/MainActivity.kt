@@ -6,6 +6,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -108,6 +109,38 @@ class MainActivity : AppCompatActivity() {
     }
     private fun stopKiosk() { try { stopLockTask() } catch (_: Exception) {} }
 
+    // ---------- modo launcher / HOME ----------
+    private val homeComponent by lazy { ComponentName(this, MainActivity::class.java) }
+
+    private fun enableLauncher() {
+        prefs.launcher = true
+        if (isDO()) {
+            // Fija DURESS como HOME preferente, sin dialogo del sistema (Opcion A)
+            val filter = IntentFilter(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addCategory(Intent.CATEGORY_DEFAULT)
+            }
+            try { dpm.addPersistentPreferredActivity(admin, filter, homeComponent) } catch (_: Exception) {}
+            toast("Modo launcher activo. El boton Home abrira DURESS.")
+        } else {
+            // En equipos sin DO: pedir al usuario que elija DURESS como Home
+            try { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+            catch (_: Exception) { toast("Elige DURESS como pantalla de inicio en Ajustes.") }
+        }
+    }
+
+    private fun disableLauncher() {
+        prefs.launcher = false
+        if (isDO()) {
+            try { dpm.clearPackagePersistentPreferredActivities(admin, packageName) } catch (_: Exception) {}
+            toast("Modo launcher desactivado. Home vuelve al launcher del sistema.")
+        } else {
+            try { startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) } catch (_: Exception) {}
+            toast("Selecciona tu launcher normal en Ajustes.")
+        }
+    }
+
+    // ---------- UI base ----------
     private fun screenRoot(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
@@ -262,15 +295,17 @@ class MainActivity : AppCompatActivity() {
         val root = screenRoot()
         root.addView(gap(24))
         root.addView(tv("\u2713 Acceso concedido", 22f, accent, bold = true))
-        root.addView(gap(6))
-        root.addView(tv("Desbloqueo legitimo", 12f, muted))
+        root.addView(gap(6)); root.addView(tv("Desbloqueo legitimo", 12f, muted))
         root.addView(gap(24))
         root.addView(pill("\u2699  Ajustes de seguridad", fg) { showSettings() })
+        // Seguro visible: salir del modo launcher si esta activo
+        if (prefs.launcher) {
+            root.addView(pill("\u21A9  Salir del modo launcher", danger) { disableLauncher(); showAccess() })
+        }
         root.addView(pill("Bloquear ahora") { showGate() })
         setContentView(root)
     }
 
-    // ---------- AJUSTES rediseniados (estilo mockup) ----------
     private fun card(title: String, accentColor: Int): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(16), dp(16), dp(16), dp(16))
@@ -296,13 +331,11 @@ class MainActivity : AppCompatActivity() {
             }
             isClickable = true; setOnClickListener { onClick() }
         }
-        val head = TextView(this).apply {
+        box.addView(TextView(this).apply {
             text = (if (selected) "\u25C9  " else "\u25CB  ") + title
             setTextColor(if (selected) accent else fg)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        box.addView(head)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f); setTypeface(typeface, Typeface.BOLD)
+        })
         box.addView(tv(desc, 12f, muted).apply { gravity = Gravity.START; setPadding(dp(24), dp(2), 0, 0) })
         return box
     }
@@ -314,26 +347,18 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(20), dp(28), dp(20), dp(28))
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-
-        // Cabecera
         root.addView(tv("\u2699  Configuracion de Seguridad", 20f, fg, bold = true).apply { gravity = Gravity.START })
         root.addView(tv("Personaliza PINs, teclado y disparadores", 12f, muted).apply { gravity = Gravity.START })
 
-        // Card 1: accion Duress (informativa por ahora - eleccion actual fija)
         val c1 = card("\u26A0  Accion al introducir el Duress PIN", danger)
-        c1.addView(rowOption(
-            "Factory Reset completo",
-            "Invoca DevicePolicyManager.wipeData() y formatea todo el telefono sin confirmacion. (Activo)",
-            selected = true
-        ) { toast("Por ahora esta es la accion configurada. Otras acciones llegaran mas adelante.") })
-        c1.addView(rowOption(
-            "Borrado local de la app",
-            "Elimina solo las claves y datos de DURESS. (Proximamente)",
-            selected = false
-        ) { toast("Aun no disponible: lo implementaremos en una fase futura.") })
+        c1.addView(rowOption("Factory Reset completo",
+            "Invoca wipeData() y formatea todo el telefono sin confirmacion. (Activo)", true) {
+            toast("Accion configurada actualmente.") })
+        c1.addView(rowOption("Borrado local de la app",
+            "Elimina solo claves y datos de DURESS. (Proximamente)", false) {
+            toast("Aun no disponible.") })
         root.addView(c1)
 
-        // Card 2: teclado / hardening
         val c2 = card("\u25A3  Teclado y Endurecimiento", accent)
         c2.addView(themedCheck("Teclado desordenado (anti shoulder-surfing)", prefs.shuffle) { prefs.shuffle = it })
         c2.addView(themedCheck("Modo kiosco: no salir sin PIN (solo Device Owner)", prefs.kiosk) { c ->
@@ -344,11 +369,22 @@ class MainActivity : AppCompatActivity() {
         })
         root.addView(c2)
 
-        // Card 3: proteccion device owner
-        val c3 = card("\u1F512  Proteccion (Device Owner)", accent)
-        val doState = tv(if (isDO()) "Estado: DEVICE OWNER activo" else "Estado: sin privilegios de Device Owner", 12f, if (isDO()) accent else muted)
-            .apply { gravity = Gravity.START }
-        c3.addView(doState)
+        // NUEVA card: modo launcher
+        val c3 = card("\u1F3E0  Modo Launcher (pantalla de inicio)", accent)
+        c3.addView(tv(
+            if (isDO()) "Con Device Owner, DURESS puede fijarse como Home sin preguntar."
+            else "Sin Device Owner, Android te preguntara que Home usar.",
+            12f, muted).apply { gravity = Gravity.START })
+        c3.addView(themedCheck("DURESS como pantalla de inicio (Home)", prefs.launcher) { c ->
+            if (c) enableLauncher() else disableLauncher()
+        })
+        c3.addView(tv("Aviso: con esto el boton Home abrira DURESS. Usa 'Salir del modo launcher' para revertir.",
+            11f, danger).apply { gravity = Gravity.START })
+        root.addView(c3)
+
+        val c4 = card("\u1F512  Proteccion (Device Owner)", accent)
+        c4.addView(tv(if (isDO()) "Estado: DEVICE OWNER activo" else "Estado: sin privilegios de Device Owner",
+            12f, if (isDO()) accent else muted).apply { gravity = Gravity.START })
         val uninstall = pill("") { }
         fun refresh() {
             val blocked = if (isDO()) try { dpm.isUninstallBlocked(admin, packageName) } catch (_: Exception) { false } else false
@@ -360,12 +396,12 @@ class MainActivity : AppCompatActivity() {
             try { dpm.setUninstallBlocked(admin, packageName, !blocked) } catch (_: Exception) {}
             refresh()
         }
-        refresh(); c3.addView(uninstall)
-        root.addView(c3)
+        refresh(); c4.addView(uninstall)
+        root.addView(c4)
 
-        // Acciones
         root.addView(gap(20))
         root.addView(pill("\u2713  Volver", accent) { showAccess() })
+        if (prefs.launcher) root.addView(pill("\u21A9  Salir del modo launcher", danger) { disableLauncher(); showSettings() })
         root.addView(pill("Reconfigurar PIN", danger) { store.reset(); showSetupNormal() })
 
         scroll.addView(root)
@@ -380,18 +416,4 @@ class MainActivity : AppCompatActivity() {
         }
         if (Build.VERSION.SDK_INT >= 34) {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (!nm.canUseFullScreenIntent()) {
-                try { startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))) } catch (_: Exception) {}
-            }
-        }
-        toast("Activado. En MIUI/XOS puede requerir 'Inicio automatico' en Ajustes.")
-    }
-
-    private fun triggerDuress() {
-        var flags = DevicePolicyManager.WIPE_EXTERNAL_STORAGE
-        if (Build.VERSION.SDK_INT >= 34) flags = flags or DevicePolicyManager.WIPE_SILENTLY
-        try { dpm.wipeData(flags) }
-        catch (e: SecurityException) { toast("[Deteccion Duress OK] wipeData bloqueado: ${e.message}") }
-        catch (e: Exception) { toast("[Deteccion Duress OK] error: ${e.message}") }
-    }
-}
+        
