@@ -2,7 +2,6 @@ package com.duress.adminspike
 
 import android.content.Context
 
-/** Preferencias de UI/seguridad no secretas. */
 class AppPrefs(context: Context) {
     private val sp = context.applicationContext
         .getSharedPreferences("duress_prefs", Context.MODE_PRIVATE)
@@ -18,4 +17,8 @@ class AppPrefs(context: Context) {
     var showOnBoot: Boolean
         get() = sp.getBoolean("show_on_boot", false)
         set(v) { sp.edit().putBoolean("show_on_boot", v).apply() }
+
+    var launcher: Boolean
+        get() = sp.getBoolean("launcher", false)
+        set(v) { sp.edit().putBoolean("launcher", v).apply() }
 }
