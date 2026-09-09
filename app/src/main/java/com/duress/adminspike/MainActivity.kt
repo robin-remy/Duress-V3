@@ -23,6 +23,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -53,19 +54,19 @@ class MainActivity : AppCompatActivity() {
     private var currentError: TextView? = null
     private var currentDots: TextView? = null
     private var currentKeypad: PinKeypadView? = null
-    private var clockView: TextView? = null
 
     private val ticker = Handler(Looper.getMainLooper())
     private var tickRunnable: Runnable? = null
     private val clockTicker = Handler(Looper.getMainLooper())
     private var clockRunnable: Runnable? = null
 
-    // --- paleta ---
     private val bg = Color.parseColor("#0B0F14")
     private val fg = Color.parseColor("#E6EDF3")
     private val muted = Color.parseColor("#8A97A6")
     private val accent = Color.parseColor("#2DD4BF")
+    private val danger = Color.parseColor("#F87171")
     private val cardBg = Color.parseColor("#141C26")
+    private val stroke = Color.parseColor("#22333F")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,13 +92,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() { super.onStop(); if (screen == Screen.ACCESS) wasStopped = true }
-
     override fun onResume() {
         super.onResume()
         if (wasStopped && screen == Screen.ACCESS) { wasStopped = false; showGate() }
         else if (screen == Screen.GATE) maybeStartKiosk()
     }
-
     override fun onDestroy() { super.onDestroy(); stopClock(); stopTicker() }
 
     private fun isDO() = dpm.isDeviceOwnerApp(packageName)
@@ -109,7 +108,6 @@ class MainActivity : AppCompatActivity() {
     }
     private fun stopKiosk() { try { stopLockTask() } catch (_: Exception) {} }
 
-    // ---------- UI base ----------
     private fun screenRoot(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
@@ -133,17 +131,17 @@ class MainActivity : AppCompatActivity() {
         setPadding(dp(8), dp(4), dp(8), dp(4))
         background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE; cornerRadius = dp(20).toFloat()
-            setColor(cardBg); setStroke(dp(1), Color.parseColor("#22333F"))
+            setColor(cardBg); setStroke(dp(1), stroke)
         }
     }
-    private fun pillButton(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
-        this.text = text; setTextColor(fg); gravity = Gravity.CENTER
+    private fun pill(text: String, textColor: Int = fg, onClick: () -> Unit): TextView = TextView(this).apply {
+        this.text = text; setTextColor(textColor); gravity = Gravity.CENTER
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setPadding(dp(20), dp(14), dp(20), dp(14))
-        layoutParams = LinearLayout.LayoutParams(dp(260), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
+        layoutParams = LinearLayout.LayoutParams(dp(280), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
         background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE; cornerRadius = dp(28).toFloat()
-            setColor(cardBg); setStroke(dp(1), Color.parseColor("#22333F"))
+            setColor(cardBg); setStroke(dp(1), stroke)
         }
         isClickable = true; setOnClickListener { onClick() }
     }
@@ -186,35 +184,28 @@ class MainActivity : AppCompatActivity() {
     }
     private fun stopTicker() { tickRunnable?.let { ticker.removeCallbacks(it) }; tickRunnable = null }
 
-    // ---------- pantalla PIN con estetica ----------
     private fun buildPinScreen(
         heading: String, subtitle: String?, shuffle: Boolean, showClock: Boolean,
         onConfirm: (String) -> Unit, extra: View? = null
     ) {
         stopTicker(); stopClock(); entry.setLength(0)
         val root = screenRoot()
-
         if (showClock) {
             val clock = tv("", 46f, fg, bold = true)
             root.addView(gap(6)); root.addView(clock)
             root.addView(tv(SimpleDateFormat("EEEE, d 'de' MMMM", Locale.getDefault()).format(Date()), 13f, muted))
             root.addView(gap(10))
             val badges = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
-            badges.addView(badge("\u25CF offline"))
-            root.addView(badges)
-            clockView = clock; startClock(clock)
-            root.addView(gap(24))
+            badges.addView(badge("\u25CF offline")); root.addView(badges)
+            startClock(clock); root.addView(gap(24))
         } else root.addView(gap(30))
 
         root.addView(tv(heading, 20f, fg, bold = true))
         if (subtitle != null) { root.addView(gap(4)); root.addView(tv(subtitle, 12f, muted)) }
         root.addView(gap(20))
-
-        val dots = tv("", 20f, accent); currentDots = dots
-        root.addView(dots)
-        val err = tv("", 13f, Color.parseColor("#F87171")); currentError = err
+        val dots = tv("", 20f, accent); currentDots = dots; root.addView(dots)
+        val err = tv("", 13f, danger); currentError = err
         root.addView(gap(6)); root.addView(err); root.addView(gap(18))
-
         val keypad = PinKeypadView(
             this,
             onDigit = { d -> if (entry.length < maxLen) { entry.append(d); renderDots(); if (!guard.isLockedOut()) err.text = "" } },
@@ -222,28 +213,19 @@ class MainActivity : AppCompatActivity() {
             onConfirm = { onConfirm(entry.toString()) }
         )
         currentKeypad = keypad; keypad.applyLayout(shuffle)
-        root.addView(keypad)
-        renderDots()
-
+        root.addView(keypad); renderDots()
         if (extra != null) { root.addView(gap(16)); root.addView(extra) }
         setContentView(root)
     }
 
-    // ---------- setup ----------
     private fun showSetupNormal() {
         screen = Screen.SETUP; pendingNormal = null
-        val extras = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
-            addView(themedCheck("Teclado desordenado al desbloquear", prefs.shuffle) { prefs.shuffle = it })
-            addView(tv(if (isDO()) "Modo: DEVICE OWNER (borrado real activo)" else "Modo: sin privilegios (solo logica)", 11f, muted))
-        }
         buildPinScreen("Define tu PIN normal", "Paso 1 de 2 \u00b7 4 a 8 digitos", false, false,
             onConfirm = { pin ->
                 if (!validPin(pin)) { clearEntryAndReshuffle(); currentError?.text = "Debe tener 4 a 8 digitos" }
                 else { pendingNormal = pin; showSetupDuress() }
-            }, extra = extras)
+            })
     }
-
     private fun showSetupDuress() {
         screen = Screen.SETUP
         buildPinScreen("Define tu PIN de emergencia", "Paso 2 de 2 \u00b7 distinto del normal", false, false,
@@ -256,7 +238,6 @@ class MainActivity : AppCompatActivity() {
             })
     }
 
-    // ---------- gate ----------
     private fun showGate() {
         screen = Screen.GATE
         buildPinScreen("Introduce el PIN", null, prefs.shuffle, true,
@@ -279,19 +260,96 @@ class MainActivity : AppCompatActivity() {
     private fun showAccess() {
         screen = Screen.ACCESS; stopKiosk(); stopTicker(); stopClock()
         val root = screenRoot()
-        root.addView(gap(30))
+        root.addView(gap(24))
         root.addView(tv("\u2713 Acceso concedido", 22f, accent, bold = true))
-        root.addView(gap(20))
-        root.addView(themedCheck("Teclado desordenado al desbloquear", prefs.shuffle) { prefs.shuffle = it })
-        root.addView(themedCheck("Modo kiosco: no salir sin PIN (solo DO)", prefs.kiosk) { c ->
-            prefs.kiosk = c; if (c && !isDO()) toast("Requiere Device Owner para bloquear del todo")
+        root.addView(gap(6))
+        root.addView(tv("Desbloqueo legitimo", 12f, muted))
+        root.addView(gap(24))
+        root.addView(pill("\u2699  Ajustes de seguridad", fg) { showSettings() })
+        root.addView(pill("Bloquear ahora") { showGate() })
+        setContentView(root)
+    }
+
+    // ---------- AJUSTES rediseniados (estilo mockup) ----------
+    private fun card(title: String, accentColor: Int): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            .apply { topMargin = dp(14) }
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE; cornerRadius = dp(16).toFloat()
+            setColor(cardBg); setStroke(dp(1), stroke)
+        }
+        addView(tv(title, 14f, accentColor, bold = true).apply { gravity = Gravity.START })
+        addView(gap(8))
+    }
+    private fun rowOption(title: String, desc: String, selected: Boolean, onClick: () -> Unit): LinearLayout {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { topMargin = dp(8) }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE; cornerRadius = dp(12).toFloat()
+                setColor(if (selected) Color.parseColor("#10241F") else Color.parseColor("#0F1620"))
+                setStroke(dp(1), if (selected) accent else stroke)
+            }
+            isClickable = true; setOnClickListener { onClick() }
+        }
+        val head = TextView(this).apply {
+            text = (if (selected) "\u25C9  " else "\u25CB  ") + title
+            setTextColor(if (selected) accent else fg)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        box.addView(head)
+        box.addView(tv(desc, 12f, muted).apply { gravity = Gravity.START; setPadding(dp(24), dp(2), 0, 0) })
+        return box
+    }
+
+    private fun showSettings() {
+        val scroll = ScrollView(this).apply { setBackgroundColor(bg) }
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(28), dp(20), dp(28))
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+
+        // Cabecera
+        root.addView(tv("\u2699  Configuracion de Seguridad", 20f, fg, bold = true).apply { gravity = Gravity.START })
+        root.addView(tv("Personaliza PINs, teclado y disparadores", 12f, muted).apply { gravity = Gravity.START })
+
+        // Card 1: accion Duress (informativa por ahora - eleccion actual fija)
+        val c1 = card("\u26A0  Accion al introducir el Duress PIN", danger)
+        c1.addView(rowOption(
+            "Factory Reset completo",
+            "Invoca DevicePolicyManager.wipeData() y formatea todo el telefono sin confirmacion. (Activo)",
+            selected = true
+        ) { toast("Por ahora esta es la accion configurada. Otras acciones llegaran mas adelante.") })
+        c1.addView(rowOption(
+            "Borrado local de la app",
+            "Elimina solo las claves y datos de DURESS. (Proximamente)",
+            selected = false
+        ) { toast("Aun no disponible: lo implementaremos en una fase futura.") })
+        root.addView(c1)
+
+        // Card 2: teclado / hardening
+        val c2 = card("\u25A3  Teclado y Endurecimiento", accent)
+        c2.addView(themedCheck("Teclado desordenado (anti shoulder-surfing)", prefs.shuffle) { prefs.shuffle = it })
+        c2.addView(themedCheck("Modo kiosco: no salir sin PIN (solo Device Owner)", prefs.kiosk) { c ->
+            prefs.kiosk = c; if (c && !isDO()) toast("Requiere Device Owner")
         })
-        root.addView(themedCheck("Aparecer al encender / sobre el bloqueo", prefs.showOnBoot) { c ->
+        c2.addView(themedCheck("Aparecer sobre el bloqueo / al encender", prefs.showOnBoot) { c ->
             if (c) enableShowOnBoot() else prefs.showOnBoot = false
         })
-        root.addView(gap(10))
+        root.addView(c2)
 
-        val uninstall = pillButton("") { }
+        // Card 3: proteccion device owner
+        val c3 = card("\u1F512  Proteccion (Device Owner)", accent)
+        val doState = tv(if (isDO()) "Estado: DEVICE OWNER activo" else "Estado: sin privilegios de Device Owner", 12f, if (isDO()) accent else muted)
+            .apply { gravity = Gravity.START }
+        c3.addView(doState)
+        val uninstall = pill("") { }
         fun refresh() {
             val blocked = if (isDO()) try { dpm.isUninstallBlocked(admin, packageName) } catch (_: Exception) { false } else false
             uninstall.text = if (blocked) "Anti-desinstalacion: ON" else "Anti-desinstalacion: OFF"
@@ -302,11 +360,16 @@ class MainActivity : AppCompatActivity() {
             try { dpm.setUninstallBlocked(admin, packageName, !blocked) } catch (_: Exception) {}
             refresh()
         }
-        refresh()
-        root.addView(uninstall)
-        root.addView(pillButton("Bloquear") { showGate() })
-        root.addView(pillButton("Reconfigurar PIN") { store.reset(); showSetupNormal() })
-        setContentView(root)
+        refresh(); c3.addView(uninstall)
+        root.addView(c3)
+
+        // Acciones
+        root.addView(gap(20))
+        root.addView(pill("\u2713  Volver", accent) { showAccess() })
+        root.addView(pill("Reconfigurar PIN", danger) { store.reset(); showSetupNormal() })
+
+        scroll.addView(root)
+        setContentView(scroll)
     }
 
     private fun enableShowOnBoot() {
