@@ -1,16 +1,17 @@
 package com.duress.adminspike
 
 import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
-import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.TextView
 
 /**
- * Teclado numerico propio que reemplaza al teclado del sistema.
- * Ordenado: 1..9 y 0 abajo al centro.
- * Desordenado: permutacion aleatoria de 0..9 en los 10 slots numericos.
- * reshuffle() rebaraja (se llama en cada intento cuando el modo esta activo).
+ * Teclado numerico propio con estetica del mockup:
+ * botones circulares oscuros, texto claro, acento teal.
+ * Ordenado o desordenado (rebaraja en cada intento cuando el modo esta activo).
  */
 class PinKeypadView(
     context: Context,
@@ -19,8 +20,13 @@ class PinKeypadView(
     private val onConfirm: () -> Unit
 ) : LinearLayout(context) {
 
-    private var shuffled: Boolean = false
-    private var digits: IntArray = intArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 0)
+    private var shuffled = false
+    private var digits = intArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 0)
+
+    private val keyFill = Color.parseColor("#1B2430")
+    private val keyText = Color.parseColor("#E6EDF3")
+    private val accent = Color.parseColor("#2DD4BF")   // teal
+    private val danger = Color.parseColor("#F87171")   // rojo suave
 
     init {
         orientation = VERTICAL
@@ -29,17 +35,11 @@ class PinKeypadView(
         rebuild()
     }
 
-    fun applyLayout(shuffle: Boolean) {
-        shuffled = shuffle
-        reshuffle()
-    }
+    fun applyLayout(shuffle: Boolean) { shuffled = shuffle; reshuffle() }
 
     fun reshuffle() {
-        digits = if (shuffled) {
-            (0..9).toMutableList().also { it.shuffle() }.toIntArray()
-        } else {
-            intArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 0)
-        }
+        digits = if (shuffled) (0..9).toMutableList().also { it.shuffle() }.toIntArray()
+        else intArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 0)
         rebuild()
     }
 
@@ -48,17 +48,18 @@ class PinKeypadView(
         var slot = 0
         for (r in 0 until 3) {
             val row = row()
-            for (c in 0 until 3) {
-                row.addView(digitButton(digits[slot])); slot++
-            }
+            for (c in 0 until 3) { row.addView(circleKey(digits[slot].toString(), keyText) { onDigit(digits_at(slot)) }); slot++ }
             addView(row)
         }
-        val row4 = row()
-        row4.addView(actionButton("\u232B") { onDelete() })   // borrar
-        row4.addView(digitButton(digits[9]))
-        row4.addView(actionButton("\u2713") { onConfirm() })  // confirmar
-        addView(row4)
+        val last = row()
+        last.addView(circleKey("\u232B", danger) { onDelete() })         // borrar
+        last.addView(circleKey(digits[9].toString(), keyText) { onDigit(digits[9]) })
+        last.addView(circleKey("\u2713", accent) { onConfirm() })        // confirmar
+        addView(last)
     }
+
+    // captura el valor correcto del slot al construir el listener
+    private fun digits_at(index: Int): Int = digits[index]
 
     private fun row() = LinearLayout(context).apply {
         orientation = HORIZONTAL
@@ -66,19 +67,19 @@ class PinKeypadView(
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
     }
 
-    private fun digitButton(d: Int) = Button(context).apply {
-        text = d.toString()
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
-        layoutParams = LayoutParams(0, dp(64), 1f)
-            .apply { setMargins(dp(6), dp(6), dp(6), dp(6)) }
-        setOnClickListener { onDigit(d) }
-    }
-
-    private fun actionButton(label: String, onClick: () -> Unit) = Button(context).apply {
+    private fun circleKey(label: String, textColor: Int, onClick: () -> Unit) = TextView(context).apply {
         text = label
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-        layoutParams = LayoutParams(0, dp(64), 1f)
-            .apply { setMargins(dp(6), dp(6), dp(6), dp(6)) }
+        setTextColor(textColor)
+        gravity = Gravity.CENTER
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+        val size = dp(74)
+        layoutParams = LayoutParams(size, size).apply { setMargins(dp(10), dp(10), dp(10), dp(10)) }
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(keyFill)
+            setStroke(dp(1), Color.parseColor("#2A3644"))
+        }
+        isClickable = true
         setOnClickListener { onClick() }
     }
 
