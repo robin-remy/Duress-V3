@@ -9,9 +9,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 /**
- * Teclado numerico propio con estetica del mockup:
- * botones circulares oscuros, texto claro, acento teal.
- * Ordenado o desordenado (rebaraja en cada intento cuando el modo esta activo).
+ * Teclado numerico propio. Cada boton captura SU digito directamente
+ * (sin depender de indices), por eso el modo desordenado funciona bien.
  */
 class PinKeypadView(
     context: Context,
@@ -25,8 +24,8 @@ class PinKeypadView(
 
     private val keyFill = Color.parseColor("#1B2430")
     private val keyText = Color.parseColor("#E6EDF3")
-    private val accent = Color.parseColor("#2DD4BF")   // teal
-    private val danger = Color.parseColor("#F87171")   // rojo suave
+    private val accent = Color.parseColor("#2DD4BF")
+    private val danger = Color.parseColor("#F87171")
 
     init {
         orientation = VERTICAL
@@ -45,21 +44,25 @@ class PinKeypadView(
 
     private fun rebuild() {
         removeAllViews()
+        // Primeras 9 teclas en cuadricula 3x3
         var slot = 0
         for (r in 0 until 3) {
             val row = row()
-            for (c in 0 until 3) { row.addView(circleKey(digits[slot].toString(), keyText) { onDigit(digits_at(slot)) }); slot++ }
+            for (c in 0 until 3) {
+                val value = digits[slot]                       // capturado por valor
+                row.addView(circleKey(value.toString(), keyText) { onDigit(value) })
+                slot++
+            }
             addView(row)
         }
+        // Fila final: borrar, ultimo digito, confirmar
+        val lastValue = digits[9]
         val last = row()
-        last.addView(circleKey("\u232B", danger) { onDelete() })         // borrar
-        last.addView(circleKey(digits[9].toString(), keyText) { onDigit(digits[9]) })
-        last.addView(circleKey("\u2713", accent) { onConfirm() })        // confirmar
+        last.addView(circleKey("\u232B", danger) { onDelete() })
+        last.addView(circleKey(lastValue.toString(), keyText) { onDigit(lastValue) })
+        last.addView(circleKey("\u2713", accent) { onConfirm() })
         addView(last)
     }
-
-    // captura el valor correcto del slot al construir el listener
-    private fun digits_at(index: Int): Int = digits[index]
 
     private fun row() = LinearLayout(context).apply {
         orientation = HORIZONTAL
