@@ -313,24 +313,61 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
     }
 
+    private var pendingDuress: String? = null
+
     private fun showSetupNormal() {
         screen = Screen.SETUP
         pendingNormal = null
-        buildPinScreen("Define tu PIN normal", "Paso 1 de 2 \u00b7 4 a 8 digitos", false, false,
+        pendingDuress = null
+        buildPinScreen("Define tu PIN normal", "Paso 1 de 4 \u00b7 4 a 8 digitos", false, false,
             onConfirm = { pin ->
                 if (!validPin(pin)) { clearEntryAndReshuffle(); currentError?.text = "Debe tener 4 a 8 digitos" }
-                else { pendingNormal = pin; showSetupDuress() }
+                else { pendingNormal = pin; showConfirmNormal() }
+            })
+    }
+
+    private fun showConfirmNormal() {
+        screen = Screen.SETUP
+        buildPinScreen("Repite tu PIN normal", "Paso 2 de 4 \u00b7 confirmacion", false, false,
+            onConfirm = { pin ->
+                if (pin != pendingNormal) {
+                    clearEntryAndReshuffle()
+                    currentError?.text = "No coincide. Reintenta desde el paso 1"
+                    pendingNormal = null
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ showSetupNormal() }, 1200)
+                } else {
+                    showSetupDuress()
+                }
             })
     }
 
     private fun showSetupDuress() {
         screen = Screen.SETUP
-        buildPinScreen("Define tu PIN de emergencia", "Paso 2 de 2 \u00b7 distinto del normal", false, false,
+        buildPinScreen("Define tu PIN de emergencia", "Paso 3 de 4 \u00b7 distinto del normal", false, false,
             onConfirm = { pin ->
                 when {
                     !validPin(pin) -> { clearEntryAndReshuffle(); currentError?.text = "Debe tener 4 a 8 digitos" }
                     pin == pendingNormal -> { clearEntryAndReshuffle(); currentError?.text = "Debe ser distinto del normal" }
-                    else -> { store.configure(pendingNormal!!, pin); pendingNormal = null; toast("PIN configurados"); showGate() }
+                    else -> { pendingDuress = pin; showConfirmDuress() }
+                }
+            })
+    }
+
+    private fun showConfirmDuress() {
+        screen = Screen.SETUP
+        buildPinScreen("Repite tu PIN de emergencia", "Paso 4 de 4 \u00b7 confirmacion", false, false,
+            onConfirm = { pin ->
+                if (pin != pendingDuress) {
+                    clearEntryAndReshuffle()
+                    currentError?.text = "No coincide. Reintenta el paso 3"
+                    pendingDuress = null
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ showSetupDuress() }, 1200)
+                } else {
+                    store.configure(pendingNormal!!, pendingDuress!!)
+                    pendingNormal = null
+                    pendingDuress = null
+                    toast("PIN configurados")
+                    showGate()
                 }
             })
     }
