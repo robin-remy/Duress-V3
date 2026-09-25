@@ -19,6 +19,8 @@ jobs:
           java-version: '17'
 
       - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
       - name: Instalar SDK de Android
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
