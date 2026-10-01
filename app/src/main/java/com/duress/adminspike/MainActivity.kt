@@ -87,12 +87,20 @@ class MainActivity : AppCompatActivity() {
         })
 
         if (store.isConfigured()) showGate() else showSetupNormal()
+
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        try { registerReceiver(screenOnReceiver, filter) } catch (_: Exception) {}
     }
 
     private fun applyLockScreenFlags() {
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
+            val km = getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+            try { km.requestDismissKeyguard(this, null) } catch (_: Exception) {}
         } else {
             @Suppress("DEPRECATION")
             window.addFlags(
@@ -120,14 +128,24 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyLockScreenFlags()
         if (wasStopped && screen == Screen.ACCESS) { wasStopped = false; showGate() }
         else if (screen == Screen.GATE) maybeStartKiosk()
+    }
+
+    private val screenOnReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val i = Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            try { context.startActivity(i) } catch (_: Exception) {}
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         stopClock()
         stopTicker()
+        try { unregisterReceiver(screenOnReceiver) } catch (_: Exception) {}
     }
 
     private fun isDO() = dpm.isDeviceOwnerApp(packageName)
