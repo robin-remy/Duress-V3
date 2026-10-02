@@ -151,7 +151,9 @@ class MainActivity : AppCompatActivity() {
     private fun isDO() = dpm.isDeviceOwnerApp(packageName)
 
     private fun maybeStartKiosk() {
-        if (prefs.kiosk && isDO()) {
+        // El kiosco se activa SIEMPRE en el gate (no opcional): es lo unico
+        // que bloquea la cortina de notificaciones y el acceso a Ajustes.
+        if (isDO()) {
             try { dpm.setLockTaskPackages(admin, arrayOf(packageName)) } catch (_: Exception) {}
             try { startLockTask() } catch (_: Exception) {}
         }
