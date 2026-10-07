@@ -425,7 +425,7 @@ class MainActivity : AppCompatActivity() {
         if (guard.isLockedOut()) startLockoutTicker()
     }
 
-    private fun showAccess() {
+        private fun showAccess() {
         screen = Screen.ACCESS
         stopKiosk()
         stopTicker()
@@ -436,12 +436,38 @@ class MainActivity : AppCompatActivity() {
         root.addView(gap(6))
         root.addView(tv("Desbloqueo legitimo", 12f, muted))
         root.addView(gap(24))
+        root.addView(pill("Usar el telefono", accent) { openSystemLauncher() })
         root.addView(pill("Ajustes de seguridad", fg) { showSettings() })
         if (prefs.launcher) {
             root.addView(pill("Salir del modo launcher", danger) { disableLauncher(); showAccess() })
         }
         root.addView(pill("Bloquear ahora") { showGate() })
         setContentView(root)
+    }
+
+    private fun openSystemLauncher() {
+        stopKiosk()
+        // Abre el selector de HOME del sistema (POCO Launcher u otro),
+        // saltando temporalmente el HOME preferente de DURESS.
+        val home = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            val resolved = packageManager.queryIntentActivities(home, 0)
+            val other = resolved.firstOrNull { it.activityInfo.packageName != packageName }
+            if (other != null) {
+                startActivity(Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    setClassName(other.activityInfo.packageName, other.activityInfo.name)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } else {
+                startActivity(home)
+            }
+        } catch (_: Exception) {
+            toast("No se pudo abrir el launcher del sistema")
+        }
     }
 
     private fun card(title: String, accentColor: Int): LinearLayout = LinearLayout(this).apply {
