@@ -54,7 +54,8 @@ class MainActivity : AppCompatActivity() {
     private var screen = Screen.GATE
     private var wasStopped = false
     private var pendingNormal: String? = null
-
+    private var openedFromIcon = false
+    
     private var currentError: TextView? = null
     private var currentDots: TextView? = null
     private var currentKeypad: PinKeypadView? = null
@@ -74,6 +75,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        openedFromIcon = intent?.let {
+            it.hasCategory(Intent.CATEGORY_LAUNCHER) && !it.hasCategory(Intent.CATEGORY_HOME)
+        } ?: false
         applyLockScreenFlags()
         applyImmersive()
         store = SecurePinStore(this)
@@ -126,11 +130,19 @@ class MainActivity : AppCompatActivity() {
         if (screen == Screen.ACCESS) wasStopped = true
     }
 
-    override fun onResume() {
+        override fun onResume() {
         super.onResume()
         applyLockScreenFlags()
         if (wasStopped && screen == Screen.ACCESS) { wasStopped = false; showGate() }
         else if (screen == Screen.GATE) maybeStartKiosk()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openedFromIcon = intent.hasCategory(Intent.CATEGORY_LAUNCHER) &&
+            !intent.hasCategory(Intent.CATEGORY_HOME)
+        if (store.isConfigured()) showGate() else showSetupNormal()
     }
 
     private val screenOnReceiver = object : android.content.BroadcastReceiver() {
@@ -414,7 +426,10 @@ class MainActivity : AppCompatActivity() {
                 when {
                     result == SecurePinStore.Result.DURESS -> triggerDuress()
                     guard.isLockedOut() -> { clearEntryAndReshuffle(); startLockoutTicker() }
-                    result == SecurePinStore.Result.NORMAL -> { guard.recordSuccess(); stopTicker(); showAccess() }
+                        result == SecurePinStore.Result.NORMAL -> {
+                            guard.recordSuccess(); stopTicker()
+                        if (openedFromIcon) showAccess() else goToSystemLauncher()
+                        }
                     else -> {
                         guard.recordFailure(); clearEntryAndReshuffle()
                         if (guard.isLockedOut()) startLockoutTicker() else currentError?.text = "PIN incorrecto"
@@ -436,7 +451,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(gap(6))
         root.addView(tv("Desbloqueo legitimo", 12f, muted))
         root.addView(gap(24))
-        root.addView(pill("Usar el telefono", accent) { openSystemLauncher() })
+        root.addView(pill("Usar el telefono", accent) { goToSystemLauncher() })
         root.addView(pill("Ajustes de seguridad", fg) { showSettings() })
         if (prefs.launcher) {
             root.addView(pill("Salir del modo launcher", danger) { disableLauncher(); showAccess() })
@@ -445,28 +460,27 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
     }
 
-    private fun openSystemLauncher() {
+        private fun goToSystemLauncher() {
         stopKiosk()
-        // Abre el selector de HOME del sistema (POCO Launcher u otro),
-        // saltando temporalmente el HOME preferente de DURESS.
-        val home = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolved = packageManager.queryIntentActivities(home, 0)
+        val target = resolved.firstOrNull {
+            val p = it.activityInfo.packageName
+            p != packageName && p != "android"
         }
         try {
-            val resolved = packageManager.queryIntentActivities(home, 0)
-            val other = resolved.firstOrNull { it.activityInfo.packageName != packageName }
-            if (other != null) {
+            if (target != null) {
                 startActivity(Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
-                    setClassName(other.activityInfo.packageName, other.activityInfo.name)
+                    setClassName(target.activityInfo.packageName, target.activityInfo.name)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 })
             } else {
-                startActivity(home)
+                startActivity(home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             }
-        } catch (_: Exception) {
-            toast("No se pudo abrir el launcher del sistema")
+        } catch (e: Exception) {
+            toast("No se pudo abrir el telefono: ${e.message}")
+            showAccess()
         }
     }
 
