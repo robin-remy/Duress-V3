@@ -60,16 +60,19 @@ jobs:
           echo "SIGNATURE_CHECKSUM=$CHECKSUM" >> "$GITHUB_ENV"
           echo "Checksum: $CHECKSUM"
 
+      - name: Descargar Gradle 8.7
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+          unzip -q gradle-8.7-bin.zip
+
       - name: Compilar APK
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/release.jks
           KEYSTORE_PASSWORD: duresspass
           KEY_ALIAS: duress
           KEY_PASSWORD: duresspass
-        run: |
-          gradle wrapper --gradle-version 8.7
-          ./gradlew assembleDebug --no-daemon --stacktrace
-
+        run: ./gradle-8.7/bin/gradle assembleDebug --no-daemon --stacktrace
+        
       - name: Generar QR de provisioning
         run: |
           APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/spike-latest/app-debug.apk"
