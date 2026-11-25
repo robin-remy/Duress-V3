@@ -82,10 +82,12 @@ jobs:
           qrencode -o provisioning-qr.png -s 8 -m 3 "$(cat provisioning.json)"
 
       - name: Publicar APK y QR
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: spike-latest
-          name: DURESS DO Spike - ultima build
-          files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            provisioning-qr.png
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete spike-latest --yes --cleanup-tag || true
+          gh release create spike-latest \
+            app/build/outputs/apk/debug/app-debug.apk \
+            provisioning-qr.png \
+            --title "DURESS DO Spike - ultima build" \
+            --notes "Build automatica DURESS"
