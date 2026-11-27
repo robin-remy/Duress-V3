@@ -461,32 +461,31 @@ class MainActivity : AppCompatActivity() {
     }
 
         private fun goToSystemLauncher() {
-        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        val resolved = packageManager.queryIntentActivities(home, 0)
+        val homeQuery = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolved = packageManager.queryIntentActivities(homeQuery, PackageManager.MATCH_ALL)
         val target = resolved.firstOrNull {
             val p = it.activityInfo.packageName
             p != packageName && p != "android"
         }
-        // Autoriza el launcher en el lock task ANTES de salir del kiosco,
-        // para que el lanzamiento no quede bloqueado en silencio.
-        if (isDO()) {
-            try {
-                val pkgs = if (target != null)
-                    arrayOf(packageName, target.activityInfo.packageName)
-                else arrayOf(packageName)
-                dpm.setLockTaskPackages(admin, pkgs)
-            } catch (_: Exception) {}
-        }
+        toast("Launcher detectado: " + (target?.activityInfo?.packageName ?: "NINGUNO"))
         try { stopLockTask() } catch (_: Exception) {}
-        val intent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            if (target != null) setClassName(target.activityInfo.packageName, target.activityInfo.name)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        if (isDO() && target != null) {
+            // Con poder de Device Owner, fija el launcher real como HOME del sistema
+            val f = IntentFilter(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addCategory(Intent.CATEGORY_DEFAULT)
+            }
+            val comp = ComponentName(target.activityInfo.packageName, target.activityInfo.name)
+            try { dpm.clearPackagePersistentPreferredActivities(admin, packageName) } catch (_: Exception) {}
+            try { dpm.addPersistentPreferredActivity(admin, f, comp) } catch (_: Exception) {}
         }
         Handler(Looper.getMainLooper()).postDelayed({
-            try { startActivity(intent) }
-            catch (e: Exception) { toast("No se pudo abrir el telefono: ${e.message}"); showAccess() }
-        }, 250)
+            try {
+                startActivity(Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_HOME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e: Exception) { toast("No se pudo abrir el telefono: ${e.message}") }
+        }, 300)
     }
 
     private fun card(title: String, accentColor: Int): LinearLayout = LinearLayout(this).apply {
