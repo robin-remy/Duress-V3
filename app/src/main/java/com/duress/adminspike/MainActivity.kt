@@ -461,27 +461,32 @@ class MainActivity : AppCompatActivity() {
     }
 
         private fun goToSystemLauncher() {
-        stopKiosk()
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val resolved = packageManager.queryIntentActivities(home, 0)
         val target = resolved.firstOrNull {
             val p = it.activityInfo.packageName
             p != packageName && p != "android"
         }
-        try {
-            if (target != null) {
-                startActivity(Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    setClassName(target.activityInfo.packageName, target.activityInfo.name)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            } else {
-                startActivity(home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }
-        } catch (e: Exception) {
-            toast("No se pudo abrir el telefono: ${e.message}")
-            showAccess()
+        // Autoriza el launcher en el lock task ANTES de salir del kiosco,
+        // para que el lanzamiento no quede bloqueado en silencio.
+        if (isDO()) {
+            try {
+                val pkgs = if (target != null)
+                    arrayOf(packageName, target.activityInfo.packageName)
+                else arrayOf(packageName)
+                dpm.setLockTaskPackages(admin, pkgs)
+            } catch (_: Exception) {}
         }
+        try { stopLockTask() } catch (_: Exception) {}
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            if (target != null) setClassName(target.activityInfo.packageName, target.activityInfo.name)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            try { startActivity(intent) }
+            catch (e: Exception) { toast("No se pudo abrir el telefono: ${e.message}"); showAccess() }
+        }, 250)
     }
 
     private fun card(title: String, accentColor: Int): LinearLayout = LinearLayout(this).apply {
