@@ -95,6 +95,7 @@ class MainActivity : AppCompatActivity() {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
+            addAction(Intent.ACTION_SCREEN_OFF)
         }
         try { registerReceiver(screenOnReceiver, filter) } catch (_: Exception) {}
     }
@@ -147,10 +148,26 @@ class MainActivity : AppCompatActivity() {
 
     private val screenOnReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                reclaimHome()
+                return
+            }
             val i = Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             try { context.startActivity(i) } catch (_: Exception) {}
         }
+    }
+
+    private fun reclaimHome() {
+        if (!isDO()) return
+        val f = IntentFilter(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+        try { dpm.clearPackagePersistentPreferredActivities(admin, packageName) } catch (_: Exception) {}
+        try {
+            dpm.addPersistentPreferredActivity(admin, f, ComponentName(this, MainActivity::class.java))
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
@@ -467,7 +484,7 @@ class MainActivity : AppCompatActivity() {
             val p = it.activityInfo.packageName
             p != packageName && p != "android"
         }
-        toast("Launcher detectado: " + (target?.activityInfo?.packageName ?: "NINGUNO"))
+        
         try { stopLockTask() } catch (_: Exception) {}
         if (isDO() && target != null) {
             // Con poder de Device Owner, fija el launcher real como HOME del sistema
